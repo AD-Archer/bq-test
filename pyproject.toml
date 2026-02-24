@@ -7,14 +7,14 @@ requires-python = ">=3.11"
 dependencies = [
   "fastapi==0.116.1",
   "uvicorn==0.35.0",
-  "python-multipart==0.0.20",
+  "python-multipart==0.0.22",
   "google-cloud-bigquery==3.35.1",
   "google-cloud-storage==2.19.0",
-  "google-cloud-aiplatform==1.108.0",
+  "google-cloud-aiplatform==1.133.0",
   "google-api-python-client==2.178.0",
-  "mcp==1.17.0",
+  "mcp==1.23.0",
   "python-pptx==1.0.2",
-  "pypdf==5.9.0",
+  "pypdf==6.7.1",
   "python-dotenv==1.1.1",
 ]
 
