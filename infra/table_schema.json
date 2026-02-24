@@ -1,0 +1,16 @@
+[
+  { "name": "chunk_id", "type": "STRING", "mode": "REQUIRED" },
+  { "name": "source_id", "type": "STRING", "mode": "NULLABLE" },
+  { "name": "source_uri", "type": "STRING", "mode": "REQUIRED" },
+  { "name": "source_name", "type": "STRING", "mode": "NULLABLE" },
+  { "name": "source_system", "type": "STRING", "mode": "NULLABLE" },
+  { "name": "title", "type": "STRING", "mode": "NULLABLE" },
+  { "name": "slide_number", "type": "INT64", "mode": "NULLABLE" },
+  { "name": "chunk_index", "type": "INT64", "mode": "NULLABLE" },
+  { "name": "content_type", "type": "STRING", "mode": "NULLABLE" },
+  { "name": "modalities", "type": "STRING", "mode": "REPEATED" },
+  { "name": "detected_date", "type": "DATE", "mode": "NULLABLE" },
+  { "name": "chunk_text", "type": "STRING", "mode": "REQUIRED" },
+  { "name": "embedding", "type": "FLOAT64", "mode": "REPEATED" },
+  { "name": "created_at", "type": "TIMESTAMP", "mode": "NULLABLE" }
+]

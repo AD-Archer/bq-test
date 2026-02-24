@@ -1,0 +1,13 @@
+-- Replace PROJECT_ID and DATASET before running.
+CREATE SCHEMA IF NOT EXISTS `PROJECT_ID.DATASET`;
+
+CREATE TABLE IF NOT EXISTS `PROJECT_ID.DATASET.slide_chunks` (
+  chunk_id STRING NOT NULL,
+  source_uri STRING NOT NULL,
+  title STRING,
+  slide_number INT64,
+  chunk_text STRING NOT NULL,
+  embedding ARRAY<FLOAT64> NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP()
+);
+
