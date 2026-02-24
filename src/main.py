@@ -1,4 +1,5 @@
 from functools import lru_cache
+import logging
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from pydantic import BaseModel, Field
@@ -7,6 +8,7 @@ from fastapi.responses import HTMLResponse
 from .rag_service import SlideRAGService
 
 app = FastAPI(title="BigQuery Slide RAG")
+logger = logging.getLogger(__name__)
 
 INDEX_HTML = """<!doctype html>
 <html lang="en">
@@ -138,9 +140,9 @@ INDEX_HTML = """<!doctype html>
     <section class="grid">
       <div class="card">
         <h2>1) Upload Slides</h2>
-        <p class="small">Supported: .pptx, .pdf, .png, .jpg, .jpeg, .webp, .mp3, .wav, .m4a</p>
+        <p class="small">Supported: .pptx, .pdf, .png, .jpg, .jpeg, .webp, .mp3, .wav, .m4a, .mp4, .mov, .webm, .mkv</p>
         <div class="row">
-          <input id="fileInput" type="file" accept=".pptx,.pdf,.png,.jpg,.jpeg,.webp,.mp3,.wav,.m4a" multiple />
+          <input id="fileInput" type="file" accept=".pptx,.pdf,.png,.jpg,.jpeg,.webp,.mp3,.wav,.m4a,.mp4,.mov,.webm,.mkv" multiple />
           <button id="uploadBtn" class="btn" type="button">Upload and Index File(s)</button>
         </div>
         <div id="uploadStatus" class="status"></div>
@@ -184,6 +186,18 @@ INDEX_HTML = """<!doctype html>
         <div id="docResult" class="answer"></div>
         <div id="imageGallery" class="citations"></div>
       </div>
+
+      <div class="card">
+        <h2>4) Find Word In Video/Audio</h2>
+        <p class="small">Find exact second ranges and open playback directly at that moment.</p>
+        <div class="row">
+          <input id="wordInput" type="text" placeholder="word or phrase token" />
+          <input id="maxHitsInput" type="number" min="1" max="200" value="50" style="width: 96px;" />
+          <button id="findWordBtn" class="btn" type="button">Find Word Timing</button>
+        </div>
+        <div id="wordStatus" class="status"></div>
+        <div id="wordResults" class="answer"></div>
+      </div>
     </section>
   </main>
 
@@ -209,10 +223,26 @@ INDEX_HTML = """<!doctype html>
     const docStatus = document.getElementById("docStatus");
     const docResult = document.getElementById("docResult");
     const imageGallery = document.getElementById("imageGallery");
+    const wordInput = document.getElementById("wordInput");
+    const maxHitsInput = document.getElementById("maxHitsInput");
+    const findWordBtn = document.getElementById("findWordBtn");
+    const wordStatus = document.getElementById("wordStatus");
+    const wordResults = document.getElementById("wordResults");
 
     function setStatus(el, text, ok = true) {
       el.textContent = text;
       el.className = "status " + (ok ? "ok" : "err");
+    }
+
+    function buildMediaLinkBlock(sourceUri, sourceSignedUrl) {
+      const parts = [];
+      if (sourceSignedUrl) {
+        parts.push('<a href="' + sourceSignedUrl + '" target="_blank" rel="noopener">open source media</a>');
+      }
+      if (sourceUri) {
+        parts.push('<code>' + sourceUri + '</code>');
+      }
+      return parts.join("<br/>");
     }
 
     uploadBtn.addEventListener("click", async () => {
@@ -318,12 +348,15 @@ INDEX_HTML = """<!doctype html>
           citationsEl.textContent = "No citations.";
           return;
         }
-          citationsEl.innerHTML = "<h3>Citations</h3>" + citations.map((c) =>
+        const fmtTime = (n) => (n === null || n === undefined) ? "n/a" : Number(n).toFixed(2) + "s";
+        citationsEl.innerHTML = "<h3>Citations</h3>" + citations.map((c) =>
           '<div class="citation">' +
           "<strong>Slide " + (c.slide_number ?? "?") + "</strong> - " +
           (c.title || "Untitled") + "<br/>" +
           "<span>source_id=" + (c.source_id || "n/a") + "</span><br/>" +
           "<span>type=" + (c.content_type || "unknown") + ", date=" + (c.detected_date || "n/a") + "</span><br/>" +
+          "<span>time=" + fmtTime(c.media_start_seconds) + " to " + fmtTime(c.media_end_seconds) + ", style=" + (c.speech_style || "n/a") + "</span><br/>" +
+          (c.source_signed_url ? ('<a href="' + c.source_signed_url + '" target="_blank" rel="noopener">open source media</a><br/>') : "") +
           '<code>' + (c.source_uri || "") + "</code>" +
           "</div>"
         ).join("");
@@ -350,7 +383,10 @@ INDEX_HTML = """<!doctype html>
           return;
         }
         setStatus(docStatus, "Loaded " + data.chunk_count + " chunks from " + (data.source_name || sourceId), true);
-        docResult.textContent = data.full_text || "";
+        const mediaBlock = buildMediaLinkBlock(data.source_uri, data.source_signed_url);
+        docResult.innerHTML =
+          (mediaBlock ? (mediaBlock + "<hr style='border:0;border-top:1px solid var(--border);margin:10px 0;'>") : "") +
+          (data.full_text || "");
         imageGallery.innerHTML = "";
       } catch (err) {
         setStatus(docStatus, "Read error: " + err.message, false);
@@ -412,6 +448,53 @@ INDEX_HTML = """<!doctype html>
         setStatus(docStatus, "Image load error: " + err.message, false);
       }
     });
+
+    findWordBtn.addEventListener("click", async () => {
+      const sourceId = docIdInput.value.trim();
+      const word = wordInput.value.trim();
+      const maxHits = Number(maxHitsInput.value || "50");
+      if (!sourceId) {
+        setStatus(wordStatus, "Enter a source_id first.", false);
+        return;
+      }
+      if (!word) {
+        setStatus(wordStatus, "Enter a word to search.", false);
+        return;
+      }
+      setStatus(wordStatus, "Finding occurrences...", true);
+      wordResults.textContent = "";
+      try {
+        const res = await fetch(
+          "/videos/" + encodeURIComponent(sourceId) + "/words/" + encodeURIComponent(word) + "?max_hits=" + maxHits
+        );
+        const data = await res.json();
+        if (!res.ok) {
+          setStatus(wordStatus, data.detail || "Word search failed.", false);
+          return;
+        }
+        const occ = data.occurrences || [];
+        const mediaBlock = buildMediaLinkBlock(data.source_uri, data.source_signed_url);
+        if (!occ.length) {
+          wordResults.innerHTML = (mediaBlock ? (mediaBlock + "<br/><br/>") : "") + "No matches.";
+          setStatus(wordStatus, "No matches found.", false);
+          return;
+        }
+        wordResults.innerHTML =
+          (mediaBlock ? (mediaBlock + "<hr style='border:0;border-top:1px solid var(--border);margin:10px 0;'>") : "") +
+          occ.map((o, i) =>
+            '<div class="citation">' +
+            "<strong>#" + (i + 1) + "</strong> " +
+            "<span>time=" + (o.timecode || "n/a") + "</span>, " +
+            "<span>style=" + (o.style || "n/a") + "</span><br/>" +
+            (o.playback_url ? ('<a href="' + o.playback_url + '" target="_blank" rel="noopener">open at this second</a><br/>') : "") +
+            "<span>" + (o.chunk_text || "") + "</span>" +
+            "</div>"
+          ).join("");
+        setStatus(wordStatus, "Found " + occ.length + " match(es).", true);
+      } catch (err) {
+        setStatus(wordStatus, "Word search error: " + err.message, false);
+      }
+    });
   </script>
 </body>
 </html>
@@ -421,6 +504,24 @@ INDEX_HTML = """<!doctype html>
 @lru_cache
 def get_rag() -> SlideRAGService:
     return SlideRAGService()
+
+
+def _status_for_exception(err: Exception) -> int:
+    msg = str(err).lower()
+    if (
+        "publisher model" in msg
+        and ("not found" in msg or "does not have access" in msg)
+    ):
+        return 400
+    if (
+        "vertex ai rate limit" in msg
+        or "resource exhausted" in msg
+        or "429" in msg
+        or "quota" in msg
+        or "temporarily unavailable" in msg
+    ):
+        return 503
+    return 500
 
 
 class QueryRequest(BaseModel):
@@ -436,6 +537,12 @@ class DriveIngestRequest(BaseModel):
 
 class DocumentReadRequest(BaseModel):
     source_id: str = Field(min_length=8)
+
+
+class WordOccurrenceRequest(BaseModel):
+    source_id: str = Field(min_length=8)
+    word: str = Field(min_length=1)
+    max_hits: int = Field(default=50, ge=1, le=200)
 
 
 @app.get("/health")
@@ -478,7 +585,7 @@ def ingest_drive(req: DriveIngestRequest) -> dict:
     except ValueError as err:
         raise HTTPException(status_code=400, detail=str(err)) from err
     except Exception as err:
-        raise HTTPException(status_code=500, detail=str(err)) from err
+        raise HTTPException(status_code=_status_for_exception(err), detail=str(err)) from err
 
 
 @app.get("/documents")
@@ -487,7 +594,7 @@ def list_documents(limit: int = 100) -> dict:
         rag = get_rag()
         return {"documents": rag.list_documents(limit=limit)}
     except Exception as err:
-        raise HTTPException(status_code=500, detail=str(err)) from err
+        raise HTTPException(status_code=_status_for_exception(err), detail=str(err)) from err
 
 
 @app.get("/documents/{source_id}")
@@ -498,7 +605,7 @@ def get_document(source_id: str) -> dict:
     except ValueError as err:
         raise HTTPException(status_code=404, detail=str(err)) from err
     except Exception as err:
-        raise HTTPException(status_code=500, detail=str(err)) from err
+        raise HTTPException(status_code=_status_for_exception(err), detail=str(err)) from err
 
 
 @app.get("/documents/{source_id}/images")
@@ -509,7 +616,18 @@ def get_document_images(source_id: str, max_images: int = 50) -> dict:
     except ValueError as err:
         raise HTTPException(status_code=404, detail=str(err)) from err
     except Exception as err:
-        raise HTTPException(status_code=500, detail=str(err)) from err
+        raise HTTPException(status_code=_status_for_exception(err), detail=str(err)) from err
+
+
+@app.get("/documents/{source_id}/media")
+def get_document_media(source_id: str) -> dict:
+    try:
+        rag = get_rag()
+        return rag.get_media_source(source_id)
+    except ValueError as err:
+        raise HTTPException(status_code=404, detail=str(err)) from err
+    except Exception as err:
+        raise HTTPException(status_code=_status_for_exception(err), detail=str(err)) from err
 
 
 @app.post("/mcp/tools/read_document")
@@ -527,9 +645,36 @@ def mcp_list_images(req: DocumentReadRequest) -> dict:
     return get_document_images(req.source_id)
 
 
+@app.post("/mcp/tools/get_media_source")
+def mcp_get_media_source(req: DocumentReadRequest) -> dict:
+    return get_document_media(req.source_id)
+
+
+@app.post("/mcp/tools/find_word_occurrences")
+def mcp_find_word_occurrences(req: WordOccurrenceRequest) -> dict:
+    try:
+        rag = get_rag()
+        return rag.find_word_occurrences(req.source_id, req.word, req.max_hits)
+    except ValueError as err:
+        raise HTTPException(status_code=404, detail=str(err)) from err
+    except Exception as err:
+        raise HTTPException(status_code=_status_for_exception(err), detail=str(err)) from err
+
+
 @app.post("/mcp/tools/search")
 def mcp_search(req: QueryRequest) -> dict:
     return query_slides(req)
+
+
+@app.get("/videos/{source_id}/words/{word}")
+def find_video_word(source_id: str, word: str, max_hits: int = 50) -> dict:
+    try:
+        rag = get_rag()
+        return rag.find_word_occurrences(source_id, word, max_hits)
+    except ValueError as err:
+        raise HTTPException(status_code=404, detail=str(err)) from err
+    except Exception as err:
+        raise HTTPException(status_code=_status_for_exception(err), detail=str(err)) from err
 
 
 async def _ingest_uploaded_file(file: UploadFile) -> dict:
@@ -541,19 +686,32 @@ async def _ingest_uploaded_file(file: UploadFile) -> dict:
         raise HTTPException(status_code=400, detail="Uploaded file is empty.")
 
     try:
+        logger.info("Upload request start filename=%s size_bytes=%d", file.filename, len(content))
         rag = get_rag()
         result = rag.ingest_bytes(file.filename, content, source_system="upload")
+        logger.info(
+            "Upload request success filename=%s source_uri=%s chunks_inserted=%s",
+            file.filename,
+            result.get("source_uri"),
+            result.get("chunks_inserted"),
+        )
         return {"filename": file.filename, **result}
     except ValueError as err:
+        logger.warning("Upload request validation_error filename=%s error=%s", file.filename, err)
         raise HTTPException(status_code=400, detail=str(err)) from err
     except Exception as err:
-        raise HTTPException(status_code=500, detail=str(err)) from err
+        logger.exception("Upload request failure filename=%s error=%s", file.filename, err)
+        raise HTTPException(status_code=_status_for_exception(err), detail=str(err)) from err
 
 
 @app.post("/query")
 def query_slides(req: QueryRequest) -> dict:
     try:
+        logger.info("Query start top_k=%d question_len=%d", req.top_k, len(req.question))
         rag = get_rag()
-        return rag.answer_question(req.question, req.top_k)
+        response = rag.answer_question(req.question, req.top_k)
+        logger.info("Query success citations=%d", len(response.get("citations", [])))
+        return response
     except Exception as err:
-        raise HTTPException(status_code=500, detail=str(err)) from err
+        logger.exception("Query failure error=%s", err)
+        raise HTTPException(status_code=_status_for_exception(err), detail=str(err)) from err

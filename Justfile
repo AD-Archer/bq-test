@@ -64,6 +64,10 @@ schema-migrate:
     bq query --use_legacy_sql=false "ALTER TABLE \`${GCP_PROJECT_ID}.${BQ_DATASET}.${BQ_TABLE}\` ADD COLUMN IF NOT EXISTS content_type STRING"
     bq query --use_legacy_sql=false "ALTER TABLE \`${GCP_PROJECT_ID}.${BQ_DATASET}.${BQ_TABLE}\` ADD COLUMN IF NOT EXISTS modalities ARRAY<STRING>"
     bq query --use_legacy_sql=false "ALTER TABLE \`${GCP_PROJECT_ID}.${BQ_DATASET}.${BQ_TABLE}\` ADD COLUMN IF NOT EXISTS detected_date DATE"
+    bq query --use_legacy_sql=false "ALTER TABLE \`${GCP_PROJECT_ID}.${BQ_DATASET}.${BQ_TABLE}\` ADD COLUMN IF NOT EXISTS media_start_seconds FLOAT64"
+    bq query --use_legacy_sql=false "ALTER TABLE \`${GCP_PROJECT_ID}.${BQ_DATASET}.${BQ_TABLE}\` ADD COLUMN IF NOT EXISTS media_end_seconds FLOAT64"
+    bq query --use_legacy_sql=false "ALTER TABLE \`${GCP_PROJECT_ID}.${BQ_DATASET}.${BQ_TABLE}\` ADD COLUMN IF NOT EXISTS speech_style STRING"
+    bq query --use_legacy_sql=false "ALTER TABLE \`${GCP_PROJECT_ID}.${BQ_DATASET}.${BQ_TABLE}\` ADD COLUMN IF NOT EXISTS word_timestamps_json STRING"
 
 health:
     curl -sS http://127.0.0.1:8080/health
@@ -107,6 +111,14 @@ mcp-images source_id:
     curl -sS -X POST "http://127.0.0.1:8080/mcp/tools/list_images" \
       -H "Content-Type: application/json" \
       -d '{"source_id":"{{source_id}}"}'
+
+mcp-media source_id:
+    curl -sS -X POST "http://127.0.0.1:8080/mcp/tools/get_media_source" \
+      -H "Content-Type: application/json" \
+      -d '{"source_id":"{{source_id}}"}'
+
+find-word source_id word max_hits="50":
+    curl -sS "http://127.0.0.1:8080/videos/{{source_id}}/words/{{word}}?max_hits={{max_hits}}"
 
 mcp-server:
     uv run --env-file .env python3 -m src.mcp_server

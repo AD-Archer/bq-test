@@ -2,7 +2,7 @@
 
 This project gives you a working starter to:
 
-1. Upload one or many files (`.pptx`, `.pdf`, images, audio)
+1. Upload one or many files (`.pptx`, `.pdf`, images, audio, video)
 2. Ingest slide files directly from Google Drive (file ID or folder ID)
 3. Parse and chunk slide text
 4. Create embeddings with Vertex AI
@@ -92,6 +92,7 @@ just docs-list 20
 just doc-read SOURCE_ID
 just mcp-search "What changed in summer 2025?" 5
 just mcp-read SOURCE_ID
+just find-word SOURCE_ID hello 50
 just ask "What are the rollout risks?" 5
 ```
 
@@ -142,12 +143,25 @@ curl -X POST "http://127.0.0.1:8080/mcp/tools/read_document" \
 curl -X POST "http://127.0.0.1:8080/mcp/tools/list_images" \
   -H "Content-Type: application/json" \
   -d '{"source_id":"SOURCE_ID"}'
+
+curl -X POST "http://127.0.0.1:8080/mcp/tools/get_media_source" \
+  -H "Content-Type: application/json" \
+  -d '{"source_id":"SOURCE_ID"}'
+
+curl "http://127.0.0.1:8080/videos/SOURCE_ID/words/hello?max_hits=50"
 ```
 
 ## Important notes
 
-- Current ingestion supports `.pptx`, `.pdf`, `.png`, `.jpg`, `.jpeg`, `.webp`, `.mp3`, `.wav`, `.m4a`.
+- Current ingestion supports `.pptx`, `.pdf`, `.png`, `.jpg`, `.jpeg`, `.webp`, `.mp3`, `.wav`, `.m4a`, `.mp4`, `.mov`, `.webm`, `.mkv`.
 - New metadata is stored per chunk: source name/system, content type, modalities, and detected date.
+- Audio/video chunks include `media_start_seconds`, `media_end_seconds`, `speech_style`, and `word_timestamps_json`.
+- Video frame extraction for `/documents/{source_id}/images` requires `ffmpeg` on PATH.
+- To reduce `429 Resource exhausted` for media uploads:
+  - Set `VIDEO_ENABLE_VISUAL_ANALYSIS=false` (default) to lower model load.
+  - Set `MEDIA_GEN_MODEL` and optional `MEDIA_FALLBACK_MODELS` for automatic fallback on throttling.
+  - Increase retry settings (`VERTEX_MAX_RETRIES`, `VERTEX_RETRY_INITIAL_SECONDS`, `VERTEX_RETRY_MAX_SECONDS`) as needed.
+  - Increase `EMBED_BATCH_SIZE` to reduce embedding request count.
 - Each file gets a stable `source_id`, and full text can be retrieved by that ID.
 - You can also retrieve extracted document images using the same `source_id`.
 - Run `just schema-migrate` once to add new metadata columns to an existing table.
@@ -166,7 +180,7 @@ In another terminal start MCP stdio server:
 just mcp-server
 ```
 
-Tool names exposed: `search`, `list_documents`, `read_document`, `list_images`.
+Tool names exposed: `search`, `list_documents`, `read_document`, `list_images`, `get_media_source`, `find_word_occurrences`.
 
 If your client needs URL-based MCP (HTTP), run:
 

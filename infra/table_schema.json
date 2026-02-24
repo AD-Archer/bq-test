@@ -10,6 +10,10 @@
   { "name": "content_type", "type": "STRING", "mode": "NULLABLE" },
   { "name": "modalities", "type": "STRING", "mode": "REPEATED" },
   { "name": "detected_date", "type": "DATE", "mode": "NULLABLE" },
+  { "name": "media_start_seconds", "type": "FLOAT64", "mode": "NULLABLE" },
+  { "name": "media_end_seconds", "type": "FLOAT64", "mode": "NULLABLE" },
+  { "name": "speech_style", "type": "STRING", "mode": "NULLABLE" },
+  { "name": "word_timestamps_json", "type": "STRING", "mode": "NULLABLE" },
   { "name": "chunk_text", "type": "STRING", "mode": "REQUIRED" },
   { "name": "embedding", "type": "FLOAT64", "mode": "REPEATED" },
   { "name": "created_at", "type": "TIMESTAMP", "mode": "NULLABLE" }
